@@ -1,0 +1,73 @@
+{{template "base" .}}
+
+{{define "title"}}Daftar Anime Gratis & Legal di YouTube{{end}}
+
+{{define "body"}}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-white mb-2">Daftar Anime</h1>
+        <p class="text-lg text-gray-400">Semua anime yang tersedia untuk ditonton secara gratis dan legal di YouTube.</p>
+    </div>
+
+    <!-- Form Pencarian, Sortiran, dan Filter Bahasa -->
+    <form action="/" method="GET" class="bg-gray-800 p-4 rounded-lg mb-8 flex flex-col md:flex-row items-center gap-4">
+        <div class="w-full md:flex-grow">
+            <input type="text" name="search" id="search" placeholder="Cari judul anime..." value="{{.Search}}" class="w-full bg-gray-700 border border-gray-600 rounded-md py-2 px-4 text-white focus:ring-purple-500 focus:border-purple-500">
+        </div>
+        <div class="w-full md:w-auto flex flex-col sm:flex-row items-center gap-4">
+            <!-- Filter Bahasa (Tombol Toggle Bendera) -->
+            <div class="flex items-center gap-2">
+                <a href="/?language=id&search={{.Search}}&sort={{.Sort}}" title="Sub Indonesia" class="p-1.5 rounded-md border-2 {{if eq .Language "id"}}border-purple-500{{else}}border-transparent hover:border-gray-600{{end}} transition-all">
+                    <svg width="32" height="20" viewBox="0 0 32 20" fill="none" xmlns="http://www.w3.org/2000/svg" class="rounded-sm {{if ne .Language "id"}}opacity-60{{end}}">
+                        <path d="M0 0H32V10H0V0Z" fill="#E70000"/>
+                        <path d="M0 10H32V20H0V10Z" fill="#FFFFFF"/>
+                    </svg>
+                </a>
+                <a href="/?language=en&search={{.Search}}&sort={{.Sort}}" title="Sub Inggris" class="p-1.5 rounded-md border-2 {{if eq .Language "en"}}border-purple-500{{else}}border-transparent hover:border-gray-600{{end}} transition-all">
+                    <svg width="32" height="20" viewBox="0 0 32 20" fill="none" xmlns="http://www.w3.org/2000/svg" class="rounded-sm {{if ne .Language "en"}}opacity-60{{end}}">
+                        <path d="M0 0H32V20H0V0Z" fill="#00247D"/>
+                        <path d="M32 0L0 20M0 0L32 20" stroke="#FFFFFF" stroke-width="4"/>
+                        <path d="M16 0V20M0 10H32" stroke="#CF142B" stroke-width="6"/>
+                        <path d="M16 0V20M0 10H32" stroke="#FFFFFF" stroke-width="4"/>
+                    </svg>
+                </a>
+                 <!-- Input tersembunyi untuk menjaga nilai bahasa saat form disubmit -->
+                <input type="hidden" name="language" value="{{.Language}}">
+            </div>
+            
+            <!-- Filter Urutkan -->
+            <div class="w-full sm:w-48">
+                 <select name="sort" id="sort" onchange="this.form.submit()" class="w-full bg-gray-700 border border-gray-600 rounded-md py-2 px-4 text-white focus:ring-purple-500 focus:border-purple-500">
+                    <option value="updated_desc" {{if eq .Sort "updated_desc"}}selected{{end}}>Terbaru</option>
+                    <option value="name_asc" {{if eq .Sort "name_asc"}}selected{{end}}>Nama A-Z</option>
+                    <option value="name_desc" {{if eq .Sort "name_desc"}}selected{{end}}>Nama Z-A</option>
+                    <option value="updated_asc" {{if eq .Sort "updated_asc"}}selected{{end}}>Terlama</option>
+                 </select>
+            </div>
+            <button type="submit" class="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200">
+                Cari
+            </button>
+        </div>
+    </form>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        {{range .Animes}}
+        <a href="/anime/{{.ID}}" class="group block bg-gray-800 rounded-lg overflow-hidden shadow-lg hover:shadow-purple-500/20 transform hover:-translate-y-1 transition-all duration-300">
+            <div class="aspect-video w-full overflow-hidden">
+                <img src="{{.ThumbnailURL}}" alt="Thumbnail {{.Title}}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="this.onerror=null;this.src='https://placehold.co/1280x720/111827/FFFFFF?text={{.Title}}';">
+            </div>
+            <div class="p-4">
+                <h3 class="font-semibold text-white truncate group-hover:text-purple-400 transition-colors duration-300">{{.Title}}</h3>
+                {{if .ReleaseYear}}
+                <p class="text-sm text-gray-400">{{.ReleaseYear}}</p>
+                {{end}}
+            </div>
+        </a>
+        {{else}}
+            <p class="col-span-full text-center text-gray-400 text-lg">
+                Tidak ada anime yang ditemukan dengan kriteria tersebut.
+            </p>
+        {{end}}
+    </div>
+</div>
+{{end}}
