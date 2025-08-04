@@ -21,7 +21,7 @@ type AppConfig struct {
 }
 
 var targetChannels = map[string]string{
-	"Muse Asia": "UCGbshtvS9t-8CW11W7TooQg",
+	"Muse Asia":      "UCGbshtvS9t-8CW11W7TooQg",
 	"Ani-One Asia":   "UC0wNSTMWIL3qaorLx0jie6A",
 	"Muse Indonesia": "UCxxnxya_32jcKj4yN1_kD7A",
 }

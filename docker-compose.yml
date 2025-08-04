@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  alyo-app:
+    # Membangun image dari Dockerfile di direktori saat ini
+    build: .
+    # Menamakan container agar mudah diidentifikasi
+    container_name: alyo_app
+    # Menggunakan file .env untuk variabel lingkungan
+    env_file:
+      - .env
+    ports:
+      # Memetakan port dari host ke container.
+      # ${PORT:-8080} berarti: gunakan variabel PORT dari .env,
+      # jika tidak ada, gunakan 8080 sebagai default.
+      - "${PORT:-8080}:${PORT:-8080}"
+    # Restart container secara otomatis jika terjadi kegagalan
+    restart: unless-stopped
+    # Menetapkan network (opsional tapi praktik yang baik)
+    networks:
+      - alyo-net
+
+networks:
+  alyo-net:
+    driver: bridge

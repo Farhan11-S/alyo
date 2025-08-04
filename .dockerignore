@@ -1,0 +1,14 @@
+# Abaikan direktori Git
+.git
+.github
+
+# Abaikan file spesifik Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Abaikan file environment lokal (akan disalin secara eksplisit di Dockerfile jika perlu)
+# .env
+
+# Abaikan file modul Go (sudah di-handle oleh go mod download)
+vendor/
