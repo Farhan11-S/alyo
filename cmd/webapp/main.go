@@ -82,7 +82,7 @@ func (app *Application) serve(port string) error {
 	})
 
 	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%s", port),
+		Addr:         fmt.Sprintf("127.0.0.1:%s", port),
 		Handler:      r,
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  10 * time.Second,
@@ -97,16 +97,18 @@ func (app *Application) homeHandler(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	searchQuery := query.Get("search")
 	sortOption := query.Get("sort")
-	languageOption := query.Get("language") // <-- Parameter baru
+	languageOption := query.Get("language")
 
+	// Set default sort jika tidak ada yang dipilih
 	if sortOption == "" {
 		sortOption = "updated_desc"
 	}
 
+	// Ambil data untuk daftar utama
 	params := database.GetAnimesParams{
 		Search:   searchQuery,
 		Sort:     sortOption,
-		Language: languageOption, // <-- Teruskan ke parameter DB
+		Language: languageOption,
 	}
 
 	animes, err := app.Store.GetAnimes(params)
@@ -116,12 +118,30 @@ func (app *Application) homeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	channelsMap, err := app.Store.GetAllChannelsMap()
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		log.Println(err)
+		return
+	}
+
+	// Ambil data untuk Top 10 Mingguan
+	topWeekly, err := app.Store.GetTopWeeklyAnimes()
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		log.Println(err)
+		return
+	}
+
+	// Siapkan semua data untuk dikirim ke template
 	data := map[string]interface{}{
 		"Animes":      animes,
+		"TopWeekly":   topWeekly,
+		"ChannelsMap": channelsMap,
 		"CurrentYear": time.Now().Year(),
 		"Search":      searchQuery,
 		"Sort":        sortOption,
-		"Language":    languageOption, // <-- Kirim kembali ke template
+		"Language":    languageOption,
 	}
 
 	app.render(w, r, "index.page.html", data)

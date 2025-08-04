@@ -31,7 +31,11 @@ type Store interface {
 	GetAnimeWithEpisodes(animeID int) (*models.AnimeWithEpisodes, error)
 	GetAnimes(params GetAnimesParams) ([]models.Anime, error)
 	UpdateAnimeLastUpdated(animeID int, timestamp time.Time) error
-	UpdateAnimeThumbnailURL(animeID int, newUrl string) error
+	UpdateAnimeThumbnailURL(animeID int, url string) error
+	GetAnimeViewData(animeID int) (totalViews int64, err error)
+	UpdateAnimeViewData(animeID int, totalViews int64, weeklyIncrease int64) error
+	GetTopWeeklyAnimes() ([]models.Anime, error)
+	GetAllChannelsMap() (map[string]models.Channel, error)
 }
 
 // DBStore adalah implementasi dari Store menggunakan PostgreSQL.
@@ -51,8 +55,8 @@ func NewDBStore(databaseURL string) (Store, error) {
 
 // UpsertChannel menyisipkan channel baru atau memperbarui yang sudah ada.
 func (s *DBStore) UpsertChannel(channel models.Channel) error {
-	query := `INSERT INTO channels (channel_id, name, url) VALUES ($1, $2, $3) ON CONFLICT (channel_id) DO UPDATE SET name = EXCLUDED.name, url = EXCLUDED.url;`
-	_, err := s.db.Exec(query, channel.ID, channel.Name, channel.URL)
+	query := `INSERT INTO channels (channel_id, name, url, profile_picture_url) VALUES ($1, $2, $3, $4) ON CONFLICT (channel_id) DO UPDATE SET name = EXCLUDED.name, url = EXCLUDED.url, profile_picture_url = EXCLUDED.profile_picture_url;`
+	_, err := s.db.Exec(query, channel.ID, channel.Name, channel.URL, channel.ProfilePictureURL)
 	return err
 }
 
@@ -84,35 +88,65 @@ func (s *DBStore) UpsertPlaylist(playlist models.Playlist) error {
 
 // UpsertEpisode menyisipkan episode baru atau memperbarui yang sudah ada.
 func (s *DBStore) UpsertEpisode(episode models.Episode) error {
-	query := `INSERT INTO episodes (video_id, playlist_id, title, episode_number, published_at, thumbnail_url) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (video_id) DO UPDATE SET playlist_id = EXCLUDED.playlist_id, title = EXCLUDED.title, episode_number = EXCLUDED.episode_number, published_at = EXCLUDED.published_at, thumbnail_url = EXCLUDED.thumbnail_url;`
-	_, err := s.db.Exec(query, episode.VideoID, episode.PlaylistID, episode.Title, episode.EpisodeNumber, episode.PublishedAt, episode.ThumbnailURL)
+	query := `INSERT INTO episodes (video_id, playlist_id, title, episode_number, published_at, thumbnail_url, view_count) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (video_id) DO UPDATE SET playlist_id = EXCLUDED.playlist_id, title = EXCLUDED.title, episode_number = EXCLUDED.episode_number, published_at = EXCLUDED.published_at, thumbnail_url = EXCLUDED.thumbnail_url, view_count = EXCLUDED.view_count;`
+	_, err := s.db.Exec(query, episode.VideoID, episode.PlaylistID, episode.Title, episode.EpisodeNumber, episode.PublishedAt, episode.ThumbnailURL, episode.ViewCount)
 	return err
+}
+
+func (s *DBStore) GetAllChannelsMap() (map[string]models.Channel, error) {
+	channels := []models.Channel{}
+	query := `SELECT * FROM channels`
+	err := s.db.Select(&channels, query)
+	if err != nil {
+		return nil, err
+	}
+
+	channelMap := make(map[string]models.Channel)
+	for _, ch := range channels {
+		channelMap[ch.ID] = ch
+	}
+	return channelMap, nil
 }
 
 // GetAnimes diperbarui untuk memfilter berdasarkan bahasa.
 func (s *DBStore) GetAnimes(params GetAnimesParams) ([]models.Anime, error) {
 	var animes []models.Anime
-	baseQuery := `SELECT * FROM animes`
+	// Query dasar kini menyertakan subquery untuk mendapatkan nama channel
+	baseQuery := `
+		SELECT DISTINCT ON (a.anime_id, p.language)
+			a.anime_id,
+			a.title,
+			a.synopsis,
+			a.thumbnail_url,
+			a.release_year,
+			a.last_updated,
+			a.total_view_count,
+			a.weekly_view_increase,
+			p.channel_id,
+			p.language
+		FROM animes a
+		JOIN playlists p ON a.anime_id = p.anime_id
+	`
 
-	conditions := []string{"thumbnail_url IS NOT NULL"}
+	conditions := []string{"a.thumbnail_url IS NOT NULL"}
 	var args []interface{}
 	argID := 1
 
 	if params.Language == "id" || params.Language == "en" {
-		conditions = append(conditions, fmt.Sprintf("EXISTS (SELECT 1 FROM playlists p WHERE p.anime_id = animes.anime_id AND p.language = $%d)", argID))
+		conditions = append(conditions, fmt.Sprintf("p.language = $%d", argID))
 		args = append(args, params.Language)
 		argID++
 	}
 
 	if params.Search != "" {
-		conditions = append(conditions, fmt.Sprintf("title ILIKE $%d", argID))
+		conditions = append(conditions, fmt.Sprintf("a.title ILIKE $%d", argID))
 		args = append(args, "%"+params.Search+"%")
 		argID++
 	}
 
 	whereClause := " WHERE " + strings.Join(conditions, " AND ")
 
-	orderBy := " ORDER BY last_updated DESC NULLS LAST" // Default sort
+	orderBy := " ORDER BY last_updated DESC NULLS LAST"
 	switch params.Sort {
 	case "name_asc":
 		orderBy = " ORDER BY title ASC"
@@ -122,10 +156,36 @@ func (s *DBStore) GetAnimes(params GetAnimesParams) ([]models.Anime, error) {
 		orderBy = " ORDER BY last_updated ASC NULLS LAST"
 	case "updated_desc":
 		orderBy = " ORDER BY last_updated DESC NULLS LAST"
+	case "views_desc":
+		orderBy = " ORDER BY total_view_count DESC NULLS LAST"
 	}
 
-	finalQuery := baseQuery + whereClause + orderBy
+	finalQuery := "SELECT * FROM (" + baseQuery + whereClause + ") subquery" + orderBy
+	// fmt.Println("Executing query:", finalQuery, "with args:", args)
 	err := s.db.Select(&animes, finalQuery, args...)
+	return animes, err
+}
+
+func (s *DBStore) GetAnimeViewData(animeID int) (totalViews int64, err error) {
+	query := `SELECT total_view_count FROM animes WHERE anime_id = $1`
+	err = s.db.Get(&totalViews, query, animeID)
+	// Jika tidak ada baris (anime baru), kembalikan 0 sebagai nilai lama.
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return
+}
+
+func (s *DBStore) UpdateAnimeViewData(animeID int, newTotalViews int64, weeklyIncrease int64) error {
+	query := `UPDATE animes SET total_view_count = $1, weekly_view_increase = $2 WHERE anime_id = $3`
+	_, err := s.db.Exec(query, newTotalViews, weeklyIncrease, animeID)
+	return err
+}
+
+func (s *DBStore) GetTopWeeklyAnimes() ([]models.Anime, error) {
+	var animes []models.Anime
+	query := `SELECT * FROM animes WHERE thumbnail_url IS NOT NULL AND weekly_view_increase > 0 ORDER BY weekly_view_increase DESC NULLS LAST LIMIT 10`
+	err := s.db.Select(&animes, query)
 	return animes, err
 }
 
@@ -150,7 +210,7 @@ func (s *DBStore) UpdateAnimeThumbnailURL(animeID int, newURL string) error {
 		log.Printf("WARN: Invalid URL provided for thumbnail, skipping update: %s", newURL)
 		return nil
 	}
-	
+
 	query := `UPDATE animes SET thumbnail_url = $1 WHERE anime_id = $2 AND thumbnail_url IS NULL`
 	_, err = s.db.Exec(query, newURL, animeID)
 	return err

@@ -4,18 +4,45 @@
 
 {{define "body"}}
 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+    <!-- Bagian Top 10 Mingguan -->
+    {{if .TopWeekly}}
+    <div class="mb-12">
+        <h2 class="text-2xl font-bold text-white mb-4 flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
+            Top 10 Populer Minggu Ini
+        </h2>
+        <div class="flex overflow-x-auto space-x-6 pb-4 -mx-4 px-4">
+            {{range .TopWeekly}}
+            {{/* Definisikan variabel untuk channel agar mudah diakses */}}
+            {{$channel := index $.ChannelsMap .ChannelID}}
+            <a href="/anime/{{.ID}}" class="group block flex-shrink-0 w-64 bg-gray-800 rounded-lg overflow-hidden shadow-lg hover:shadow-purple-500/20 transform hover:-translate-y-1 transition-all duration-300">
+                <div class="aspect-video w-full overflow-hidden relative">
+                    <img src="{{.ThumbnailURL}}" alt="Thumbnail {{.Title}}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="this.onerror=null;this.src='https://placehold.co/1280x720/111827/FFFFFF?text={{.Title}}';">
+                    {{if $channel.ProfilePictureURL}}
+                        <img src="{{$channel.ProfilePictureURL}}" alt="Channel Icon" title="Sumber: {{$channel.Name}}" class="absolute bottom-2 right-2 w-8 h-8 rounded-full border-2 border-gray-900">
+                    {{end}}
+                </div>
+                <div class="p-3">
+                    <h3 class="font-semibold text-sm text-white truncate group-hover:text-purple-400 transition-colors duration-300" title="{{.Title}}">{{.Title}}</h3>
+                </div>
+            </a>
+            {{end}}
+        </div>
+    </div>
+    {{end}}
+
     <div class="mb-8">
-        <h1 class="text-3xl font-bold text-white mb-2">Daftar Anime</h1>
-        <p class="text-lg text-gray-400">Semua anime yang tersedia untuk ditonton secara gratis dan legal di YouTube.</p>
+        <h1 class="text-3xl font-bold text-white mb-2">Semua Anime</h1>
     </div>
 
-    <!-- Form Pencarian, Sortiran, dan Filter Bahasa -->
+    <!-- Form Pencarian dan Filter -->
     <form action="/" method="GET" class="bg-gray-800 p-4 rounded-lg mb-8 flex flex-col md:flex-row items-center gap-4">
         <div class="w-full md:flex-grow">
             <input type="text" name="search" id="search" placeholder="Cari judul anime..." value="{{.Search}}" class="w-full bg-gray-700 border border-gray-600 rounded-md py-2 px-4 text-white focus:ring-purple-500 focus:border-purple-500">
         </div>
         <div class="w-full md:w-auto flex flex-col sm:flex-row items-center gap-4">
-            <!-- Filter Bahasa (Tombol Toggle Bendera) -->
+            <!-- Filter Bahasa -->
             <div class="flex items-center gap-2">
                 <a href="/?language=id&search={{.Search}}&sort={{.Sort}}" title="Sub Indonesia" class="p-1.5 rounded-md border-2 {{if eq .Language "id"}}border-purple-500{{else}}border-transparent hover:border-gray-600{{end}} transition-all">
                     <svg width="32" height="20" viewBox="0 0 32 20" fill="none" xmlns="http://www.w3.org/2000/svg" class="rounded-sm {{if ne .Language "id"}}opacity-60{{end}}">
@@ -34,11 +61,11 @@
                  <!-- Input tersembunyi untuk menjaga nilai bahasa saat form disubmit -->
                 <input type="hidden" name="language" value="{{.Language}}">
             </div>
-            
             <!-- Filter Urutkan -->
             <div class="w-full sm:w-48">
                  <select name="sort" id="sort" onchange="this.form.submit()" class="w-full bg-gray-700 border border-gray-600 rounded-md py-2 px-4 text-white focus:ring-purple-500 focus:border-purple-500">
                     <option value="updated_desc" {{if eq .Sort "updated_desc"}}selected{{end}}>Terbaru</option>
+                    <option value="views_desc" {{if eq .Sort "views_desc"}}selected{{end}}>Paling Populer</option>
                     <option value="name_asc" {{if eq .Sort "name_asc"}}selected{{end}}>Nama A-Z</option>
                     <option value="name_desc" {{if eq .Sort "name_desc"}}selected{{end}}>Nama Z-A</option>
                     <option value="updated_asc" {{if eq .Sort "updated_asc"}}selected{{end}}>Terlama</option>
@@ -47,19 +74,37 @@
             <button type="submit" class="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200">
                 Cari
             </button>
+            <a href="/" class="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200">Reset</a>
         </div>
     </form>
 
+    <!-- Daftar Semua Anime -->
     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {{range .Animes}}
+        {{$channel := index $.ChannelsMap .ChannelID}}
         <a href="/anime/{{.ID}}" class="group block bg-gray-800 rounded-lg overflow-hidden shadow-lg hover:shadow-purple-500/20 transform hover:-translate-y-1 transition-all duration-300">
-            <div class="aspect-video w-full overflow-hidden">
+            <div class="aspect-video w-full overflow-hidden relative">
                 <img src="{{.ThumbnailURL}}" alt="Thumbnail {{.Title}}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="this.onerror=null;this.src='https://placehold.co/1280x720/111827/FFFFFF?text={{.Title}}';">
+                
+                <!-- Ikon Channel -->
+                {{if $channel.ProfilePictureURL}}
+                    <img src="{{$channel.ProfilePictureURL}}" alt="Channel Icon" title="Sumber: {{$channel.Name}}" class="absolute bottom-2 right-2 w-8 h-8 rounded-full border-2 border-gray-900">
+                {{end}}
+
+                <!-- Bendera Bahasa -->
+                <div class="absolute top-2 left-2" title="Subtitle {{if eq .Language "id"}}Indonesia{{else}}Inggris{{end}}">
+                    {{if eq .Language "id"}}
+                    <svg width="24" height="15" viewBox="0 0 32 20" fill="none" xmlns="http://www.w3.org/2000/svg" class="rounded-sm shadow-md"><path d="M0 0H32V10H0V0Z" fill="#E70000"/><path d="M0 10H32V20H0V10Z" fill="#FFFFFF"/></svg>
+                    {{else}}
+                    <svg width="24" height="15" viewBox="0 0 32 20" fill="none" xmlns="http://www.w3.org/2000/svg" class="rounded-sm shadow-md"><path d="M0 0H32V20H0V0Z" fill="#00247D"/><path d="M32 0L0 20M0 0L32 20" stroke="#FFFFFF" stroke-width="4"/><path d="M16 0V20M0 10H32" stroke="#CF142B" stroke-width="6"/><path d="M16 0V20M0 10H32" stroke="#FFFFFF" stroke-width="4"/></svg>
+                    {{end}}
+                </div>
+
             </div>
             <div class="p-4">
-                <h3 class="font-semibold text-white truncate group-hover:text-purple-400 transition-colors duration-300">{{.Title}}</h3>
+                <h3 class="font-semibold text-white truncate group-hover:text-purple-400 transition-colors duration-300" title="{{.Title}}">{{.Title}}</h3>
                 {{if .ReleaseYear}}
-                <p class="text-sm text-gray-400">{{.ReleaseYear}}</p>
+                <p class="text-sm text-gray-400 mt-1">{{.ReleaseYear}}</p>
                 {{end}}
             </div>
         </a>

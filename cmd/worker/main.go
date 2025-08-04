@@ -21,8 +21,9 @@ type AppConfig struct {
 }
 
 var targetChannels = map[string]string{
+	"Muse Asia": "UCGbshtvS9t-8CW11W7TooQg",
+	"Ani-One Asia":   "UC0wNSTMWIL3qaorLx0jie6A",
 	"Muse Indonesia": "UCxxnxya_32jcKj4yN1_kD7A",
-	"Ani-One Asia":   "UC0wNSTMWIL3qaorLx0abI7A",
 }
 
 func main() {
@@ -72,8 +73,13 @@ func (app *AppConfig) runWorker() {
 	for name, id := range targetChannels {
 		log.Printf("Processing channel: %s", name)
 
+		profilePicURL, err := app.YouTubeClient.GetChannelProfilePicture(id)
+		if err != nil {
+			log.Printf("ERROR: Could not get profile picture for channel %s: %v", name, err)
+		}
+
 		channelURL := "https://www.youtube.com/channel/" + id
-		err := app.Store.UpsertChannel(models.Channel{ID: id, Name: name, URL: channelURL})
+		err = app.Store.UpsertChannel(models.Channel{ID: id, Name: name, URL: channelURL, ProfilePictureURL: &profilePicURL})
 		if err != nil {
 			log.Printf("ERROR: Could not upsert channel %s: %v", name, err)
 			continue
@@ -119,7 +125,28 @@ func (app *AppConfig) runWorker() {
 				log.Printf("    ERROR: Could not get videos for playlist '%s': %v", p.Snippet.Title, err)
 				continue
 			}
+			if len(videos) == 0 {
+				continue
+			}
 
+			var videoIDs []string
+			for _, v := range videos {
+				videoIDs = append(videoIDs, v.Snippet.ResourceID.VideoID)
+			}
+
+			videoDetails, err := app.YouTubeClient.GetVideoDetails(videoIDs)
+			if err != nil {
+				log.Printf("    ERROR: Could not get video details for playlist '%s': %v", p.Snippet.Title, err)
+				continue
+			}
+
+			viewCounts := make(map[string]int64)
+			for _, detail := range videoDetails {
+				vc, _ := strconv.ParseInt(detail.Statistics.ViewCount, 10, 64)
+				viewCounts[detail.ID] = vc
+			}
+
+			var currentTotalViews int64 = 0
 			var latestEpisodeTime *time.Time
 			var firstEpisodeThumbnailURL *string
 			var earliestDate *time.Time
@@ -135,11 +162,14 @@ func (app *AppConfig) runWorker() {
 					EpisodeNumber: epNum,
 					PublishedAt:   &v.Snippet.PublishedAt,
 					ThumbnailURL:  &thumbURL,
+					ViewCount:     viewCounts[v.Snippet.ResourceID.VideoID],
 				}
 				err := app.Store.UpsertEpisode(episodeModel)
 				if err != nil {
 					log.Printf("      ERROR: Could not upsert episode '%s': %v", v.Snippet.Title, err)
 				}
+
+				currentTotalViews += episodeModel.ViewCount
 
 				// Perbarui waktu episode terbaru
 				if latestEpisodeTime == nil || v.Snippet.PublishedAt.After(*latestEpisodeTime) {
@@ -151,6 +181,22 @@ func (app *AppConfig) runWorker() {
 					earliestDate = &v.Snippet.PublishedAt
 					firstEpisodeThumbnailURL = &thumbURL
 				}
+			}
+
+			// Setelah semua episode diproses, perbarui data anime
+			// 1. Dapatkan total view count lama
+			oldTotalViews, err := app.Store.GetAnimeViewData(animeID)
+			if err != nil {
+				log.Printf("    WARN: Could not get old view data for anime ID %d: %v", animeID, err)
+			}
+
+			// 2. Hitung peningkatan mingguan
+			weeklyIncrease := currentTotalViews - oldTotalViews
+
+			// 3. Perbarui data views di tabel animes
+			err = app.Store.UpdateAnimeViewData(animeID, currentTotalViews, weeklyIncrease)
+			if err != nil {
+				log.Printf("    ERROR: Could not update view data for anime ID %d: %v", animeID, err)
 			}
 
 			// Setelah semua episode diproses, perbarui timestamp dan thumbnail anime
@@ -167,7 +213,7 @@ func (app *AppConfig) runWorker() {
 				}
 			}
 
-			time.Sleep(2 * time.Second)
+			time.Sleep(1 * time.Second)
 		}
 	}
 }
