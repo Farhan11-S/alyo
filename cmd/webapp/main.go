@@ -82,7 +82,7 @@ func (app *Application) serve(port string) error {
 	})
 
 	srv := &http.Server{
-		Addr:         fmt.Sprintf("127.0.0.1:%s", port),
+		Addr:         fmt.Sprintf(":%s", port),
 		Handler:      r,
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  10 * time.Second,
