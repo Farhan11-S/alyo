@@ -86,17 +86,23 @@
             <div class="aspect-video w-full overflow-hidden relative">
                 <img src="{{.ThumbnailURL}}" alt="Thumbnail {{.Title}}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="this.onerror=null;this.src='https://placehold.co/1280x720/111827/FFFFFF?text={{.Title}}';">
                 
-                <!-- Ikon Channel -->
                 {{if $channel.ProfilePictureURL}}
                     <img src="{{$channel.ProfilePictureURL}}" alt="Channel Icon" title="Sumber: {{$channel.Name}}" class="absolute bottom-2 right-2 w-8 h-8 rounded-full border-2 border-gray-900">
                 {{end}}
 
-                <!-- Bendera Bahasa -->
-                <div class="absolute top-2 left-2" title="Subtitle {{if eq .Language "id"}}Indonesia{{else}}Inggris{{end}}">
-                    {{if eq .Language "id"}}
-                    <svg width="24" height="15" viewBox="0 0 32 20" fill="none" xmlns="http://www.w3.org/2000/svg" class="rounded-sm shadow-md"><path d="M0 0H32V10H0V0Z" fill="#E70000"/><path d="M0 10H32V20H0V10Z" fill="#FFFFFF"/></svg>
-                    {{else}}
-                    <svg width="24" height="15" viewBox="0 0 32 20" fill="none" xmlns="http://www.w3.org/2000/svg" class="rounded-sm shadow-md"><path d="M0 0H32V20H0V0Z" fill="#00247D"/><path d="M32 0L0 20M0 0L32 20" stroke="#FFFFFF" stroke-width="4"/><path d="M16 0V20M0 10H32" stroke="#CF142B" stroke-width="6"/><path d="M16 0V20M0 10H32" stroke="#FFFFFF" stroke-width="4"/></svg>
+                <!-- Tampilkan bendera untuk setiap bahasa yang tersedia -->
+                <div class="absolute top-2 left-2 flex space-x-2">
+                    {{$langs := split .Languages ","}}
+                    {{range $langs}}
+                        {{if eq . "id"}}
+                        <div title="Subtitle Indonesia">
+                            <svg width="24" height="15" viewBox="0 0 32 20" fill="none" xmlns="http://www.w3.org/2000/svg" class="rounded-sm shadow-md"><path d="M0 0H32V10H0V0Z" fill="#E70000"/><path d="M0 10H32V20H0V10Z" fill="#FFFFFF"/></svg>
+                        </div>
+                        {{else if eq . "en"}}
+                        <div title="Subtitle Inggris">
+                            <svg width="24" height="15" viewBox="0 0 32 20" fill="none" xmlns="http://www.w3.org/2000/svg" class="rounded-sm shadow-md"><path d="M0 0H32V20H0V0Z" fill="#00247D"/><path d="M32 0L0 20M0 0L32 20" stroke="#FFFFFF" stroke-width="4"/><path d="M16 0V20M0 10H32" stroke="#CF142B" stroke-width="6"/><path d="M16 0V20M0 10H32" stroke="#FFFFFF" stroke-width="4"/></svg>
+                        </div>
+                        {{end}}
                     {{end}}
                 </div>
 

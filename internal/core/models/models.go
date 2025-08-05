@@ -21,7 +21,7 @@ type Anime struct {
 	TotalViewCount     int64      `db:"total_view_count"`
 	WeeklyViewIncrease int64      `db:"weekly_view_increase"`
 	ChannelID          string     `db:"channel_id"`
-	Language           string     `db:"language"`
+	Languages           string     `db:"languages"`
 }
 
 // Playlist merepresentasikan tabel 'playlists'

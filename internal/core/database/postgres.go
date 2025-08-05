@@ -111,9 +111,8 @@ func (s *DBStore) GetAllChannelsMap() (map[string]models.Channel, error) {
 // GetAnimes diperbarui untuk memfilter berdasarkan bahasa.
 func (s *DBStore) GetAnimes(params GetAnimesParams) ([]models.Anime, error) {
 	var animes []models.Anime
-	// Query dasar kini menyertakan subquery untuk mendapatkan nama channel
 	baseQuery := `
-		SELECT DISTINCT ON (a.anime_id, p.language)
+		SELECT
 			a.anime_id,
 			a.title,
 			a.synopsis,
@@ -121,23 +120,26 @@ func (s *DBStore) GetAnimes(params GetAnimesParams) ([]models.Anime, error) {
 			a.release_year,
 			a.last_updated,
 			a.total_view_count,
-			a.weekly_view_increase,
-			p.channel_id,
-			p.language
-		FROM animes a
-		JOIN playlists p ON a.anime_id = p.anime_id
+			string_agg(DISTINCT p.language, ',') as languages,
+			(array_agg(p.channel_id))[1] as channel_id
+		FROM
+			animes a
+		JOIN
+			playlists p ON a.anime_id = p.anime_id
 	`
 
 	conditions := []string{"a.thumbnail_url IS NOT NULL"}
 	var args []interface{}
 	argID := 1
 
+	// Filter bahasa kini diterapkan sebelum pengelompokan.
 	if params.Language == "id" || params.Language == "en" {
 		conditions = append(conditions, fmt.Sprintf("p.language = $%d", argID))
 		args = append(args, params.Language)
 		argID++
 	}
 
+	// Filter pencarian.
 	if params.Search != "" {
 		conditions = append(conditions, fmt.Sprintf("a.title ILIKE $%d", argID))
 		args = append(args, "%"+params.Search+"%")
@@ -146,7 +148,11 @@ func (s *DBStore) GetAnimes(params GetAnimesParams) ([]models.Anime, error) {
 
 	whereClause := " WHERE " + strings.Join(conditions, " AND ")
 
-	orderBy := " ORDER BY last_updated DESC NULLS LAST"
+	// Klausa GROUP BY yang baru.
+	groupByClause := " GROUP BY a.anime_id"
+
+	// Logika pengurutan yang diperbarui.
+	orderBy := " ORDER BY last_updated DESC NULLS LAST" // Default sort
 	switch params.Sort {
 	case "name_asc":
 		orderBy = " ORDER BY title ASC"
@@ -160,8 +166,7 @@ func (s *DBStore) GetAnimes(params GetAnimesParams) ([]models.Anime, error) {
 		orderBy = " ORDER BY total_view_count DESC NULLS LAST"
 	}
 
-	finalQuery := "SELECT * FROM (" + baseQuery + whereClause + ") subquery" + orderBy
-	// fmt.Println("Executing query:", finalQuery, "with args:", args)
+	finalQuery := baseQuery + whereClause + groupByClause + orderBy
 	err := s.db.Select(&animes, finalQuery, args...)
 	return animes, err
 }

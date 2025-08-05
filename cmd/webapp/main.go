@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -82,7 +83,7 @@ func (app *Application) serve(port string) error {
 	})
 
 	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%s", port),
+		Addr:         fmt.Sprintf("127.0.0.1:%s", port),
 		Handler:      r,
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  10 * time.Second,
@@ -97,18 +98,14 @@ func (app *Application) homeHandler(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	searchQuery := query.Get("search")
 	sortOption := query.Get("sort")
-	languageOption := query.Get("language")
 
-	// Set default sort jika tidak ada yang dipilih
 	if sortOption == "" {
 		sortOption = "updated_desc"
 	}
 
-	// Ambil data untuk daftar utama
 	params := database.GetAnimesParams{
-		Search:   searchQuery,
-		Sort:     sortOption,
-		Language: languageOption,
+		Search: searchQuery,
+		Sort:   sortOption,
 	}
 
 	animes, err := app.Store.GetAnimes(params)
@@ -124,24 +121,21 @@ func (app *Application) homeHandler(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-
-	// Ambil data untuk Top 10 Mingguan
+	
 	topWeekly, err := app.Store.GetTopWeeklyAnimes()
-	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		log.Println(err)
-		return
-	}
+    if err != nil {
+        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+        log.Println(err)
+        return
+    }
 
-	// Siapkan semua data untuk dikirim ke template
 	data := map[string]interface{}{
 		"Animes":      animes,
-		"TopWeekly":   topWeekly,
 		"ChannelsMap": channelsMap,
+		"TopWeekly":   topWeekly,
 		"CurrentYear": time.Now().Year(),
 		"Search":      searchQuery,
 		"Sort":        sortOption,
-		"Language":    languageOption,
 	}
 
 	app.render(w, r, "index.page.html", data)
@@ -190,6 +184,11 @@ func (app *Application) render(w http.ResponseWriter, r *http.Request, name stri
 func newTemplateCache() (map[string]*template.Template, error) {
 	cache := map[string]*template.Template{}
 
+	// Fungsi kustom untuk digunakan di dalam template
+	funcMap := template.FuncMap{
+		"split": strings.Split,
+	}
+
 	pages, err := filepath.Glob("./web/templates/*.page.html")
 	if err != nil {
 		return nil, err
@@ -197,7 +196,8 @@ func newTemplateCache() (map[string]*template.Template, error) {
 
 	for _, page := range pages {
 		name := filepath.Base(page)
-		ts, err := template.ParseFiles(page)
+		// Tambahkan .Funcs(funcMap) saat mem-parsing template
+		ts, err := template.New(name).Funcs(funcMap).ParseFiles(page)
 		if err != nil {
 			return nil, err
 		}
