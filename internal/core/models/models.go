@@ -4,24 +4,24 @@ import "time"
 
 // Channel merepresentasikan tabel 'channels'
 type Channel struct {
-	ID                string  `db:"channel_id"`
-	Name              string  `db:"name"`
-	URL               string  `db:"url"`
-	ProfilePictureURL *string `db:"profile_picture_url"`
+	ID                string  `db:"channel_id" json:"channel_id"`
+	Name              string  `db:"name" json:"name"`
+	URL               string  `db:"url" json:"url"`
+	ProfilePictureURL *string `db:"profile_picture_url" json:"profile_picture_url"`
 }
 
 // Anime merepresentasikan tabel 'animes'
 type Anime struct {
-	ID                 int        `db:"anime_id"`
-	Title              string     `db:"title"`
-	Synopsis           *string    `db:"synopsis"`
-	ThumbnailURL       *string    `db:"thumbnail_url"`
-	ReleaseYear        *int       `db:"release_year"`
-	LastUpdated        *time.Time `db:"last_updated"`
-	TotalViewCount     int64      `db:"total_view_count"`
-	WeeklyViewIncrease int64      `db:"weekly_view_increase"`
-	ChannelID          string     `db:"channel_id"`
-	Languages           string     `db:"languages"`
+	ID                 int        `db:"anime_id" json:"anime_id"`
+	Title              string     `db:"title" json:"title"`
+	Synopsis           *string    `db:"synopsis" json:"synopsis"`
+	ThumbnailURL       *string    `db:"thumbnail_url" json:"thumbnail_url"`
+	ReleaseYear        *int       `db:"release_year" json:"release_year"`
+	LastUpdated        *time.Time `db:"last_updated" json:"last_updated"`
+	TotalViewCount     int64      `db:"total_view_count" json:"total_view_count"`
+	WeeklyViewIncrease int64      `db:"weekly_view_increase" json:"weekly_view_increase"`
+	ChannelID          string     `db:"channel_id" json:"channel_id"`
+	Languages          string     `db:"languages" json:"languages"`
 }
 
 // Playlist merepresentasikan tabel 'playlists'

@@ -15,9 +15,10 @@ import (
 
 // GetAnimesParams adalah struct untuk parameter pencarian, filter, dan sort.
 type GetAnimesParams struct {
-	Search   string
-	Sort     string
-	Language string // "id", "en", atau "" (semua)
+	Search string
+	Sort   string
+	Limit  int
+	Offset int
 }
 
 // Store mendefinisikan semua fungsi untuk berinteraksi dengan database.
@@ -30,6 +31,7 @@ type Store interface {
 	GetAllAnimes() ([]models.Anime, error)
 	GetAnimeWithEpisodes(animeID int) (*models.AnimeWithEpisodes, error)
 	GetAnimes(params GetAnimesParams) ([]models.Anime, error)
+	CountAnimes(params GetAnimesParams) (int, error)
 	UpdateAnimeLastUpdated(animeID int, timestamp time.Time) error
 	UpdateAnimeThumbnailURL(animeID int, url string) error
 	GetAnimeViewData(animeID int) (totalViews int64, err error)
@@ -108,38 +110,18 @@ func (s *DBStore) GetAllChannelsMap() (map[string]models.Channel, error) {
 	return channelMap, nil
 }
 
-// GetAnimes diperbarui untuk memfilter berdasarkan bahasa.
-func (s *DBStore) GetAnimes(params GetAnimesParams) ([]models.Anime, error) {
-	var animes []models.Anime
+func (s *DBStore) CountAnimes(params GetAnimesParams) (int, error) {
+	var count int
+	// Query ini hanya menghitung, jadi lebih cepat.
 	baseQuery := `
-		SELECT
-			a.anime_id,
-			a.title,
-			a.synopsis,
-			a.thumbnail_url,
-			a.release_year,
-			a.last_updated,
-			a.total_view_count,
-			string_agg(DISTINCT p.language, ',') as languages,
-			(array_agg(p.channel_id))[1] as channel_id
-		FROM
-			animes a
-		JOIN
-			playlists p ON a.anime_id = p.anime_id
+		SELECT COUNT(DISTINCT a.anime_id)
+		FROM animes a
+		JOIN playlists p ON a.anime_id = p.anime_id
 	`
-
 	conditions := []string{"a.thumbnail_url IS NOT NULL"}
 	var args []interface{}
 	argID := 1
 
-	// Filter bahasa kini diterapkan sebelum pengelompokan.
-	if params.Language == "id" || params.Language == "en" {
-		conditions = append(conditions, fmt.Sprintf("p.language = $%d", argID))
-		args = append(args, params.Language)
-		argID++
-	}
-
-	// Filter pencarian.
 	if params.Search != "" {
 		conditions = append(conditions, fmt.Sprintf("a.title ILIKE $%d", argID))
 		args = append(args, "%"+params.Search+"%")
@@ -147,12 +129,38 @@ func (s *DBStore) GetAnimes(params GetAnimesParams) ([]models.Anime, error) {
 	}
 
 	whereClause := " WHERE " + strings.Join(conditions, " AND ")
+	finalQuery := baseQuery + whereClause
 
-	// Klausa GROUP BY yang baru.
+	err := s.db.Get(&count, finalQuery, args...)
+	return count, err
+}
+
+// GetAnimes diperbarui untuk memfilter berdasarkan bahasa.
+func (s *DBStore) GetAnimes(params GetAnimesParams) ([]models.Anime, error) {
+	var animes []models.Anime
+	baseQuery := `
+		SELECT
+			a.anime_id, a.title, a.synopsis, a.thumbnail_url, a.release_year,
+			a.last_updated, a.total_view_count, a.weekly_view_increase,
+			(array_agg(p.channel_id))[1] as channel_id,
+			string_agg(DISTINCT p.language, ',') as languages
+		FROM animes a
+		JOIN playlists p ON a.anime_id = p.anime_id
+	`
+	conditions := []string{"a.thumbnail_url IS NOT NULL"}
+	var args []interface{}
+	argID := 1
+
+	if params.Search != "" {
+		conditions = append(conditions, fmt.Sprintf("a.title ILIKE $%d", argID))
+		args = append(args, "%"+params.Search+"%")
+		argID++
+	}
+
+	whereClause := " WHERE " + strings.Join(conditions, " AND ")
 	groupByClause := " GROUP BY a.anime_id"
+	orderBy := " ORDER BY last_updated DESC NULLS LAST"
 
-	// Logika pengurutan yang diperbarui.
-	orderBy := " ORDER BY last_updated DESC NULLS LAST" // Default sort
 	switch params.Sort {
 	case "name_asc":
 		orderBy = " ORDER BY title ASC"
@@ -166,7 +174,10 @@ func (s *DBStore) GetAnimes(params GetAnimesParams) ([]models.Anime, error) {
 		orderBy = " ORDER BY total_view_count DESC NULLS LAST"
 	}
 
-	finalQuery := baseQuery + whereClause + groupByClause + orderBy
+	// Menambahkan LIMIT dan OFFSET untuk pagination
+	paginationClause := fmt.Sprintf(" LIMIT %d OFFSET %d", params.Limit, params.Offset)
+
+	finalQuery := baseQuery + whereClause + groupByClause + orderBy + paginationClause
 	err := s.db.Select(&animes, finalQuery, args...)
 	return animes, err
 }

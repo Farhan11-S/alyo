@@ -2,10 +2,12 @@ package main
 
 import (
 	"alyo/internal/core/database"
+	"alyo/internal/core/models"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -77,9 +79,9 @@ func (app *Application) serve(port string) error {
 	r.Get("/anime/{id}", app.animeDetailHandler)
 
 	// API routes
-	r.Group(func(r chi.Router) {
-		r.Use(middleware.AllowContentType("application/json"))
-		r.Get("/api/animes", app.apiListAnimesHandler)
+	r.Route("/api/v1", func(r chi.Router) {
+		r.Get("/animes", app.apiListAnimesHandler)
+		r.Get("/channels", app.apiChannelsHandler) // Endpoint baru
 	})
 
 	srv := &http.Server{
@@ -95,47 +97,52 @@ func (app *Application) serve(port string) error {
 
 // homeHandler menangani permintaan ke halaman utama.
 func (app *Application) homeHandler(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
-	searchQuery := query.Get("search")
-	sortOption := query.Get("sort")
+	const pageSize = 24
 
-	if sortOption == "" {
-		sortOption = "updated_desc"
-	}
-
-	params := database.GetAnimesParams{
-		Search: searchQuery,
-		Sort:   sortOption,
-	}
-
-	animes, err := app.Store.GetAnimes(params)
+	// Ambil data untuk Top 10 Mingguan
+	topWeekly, err := app.Store.GetTopWeeklyAnimes()
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		log.Println(err)
 		return
 	}
 
+	// Ambil data untuk halaman pertama
+	getParams := database.GetAnimesParams{
+		Search: "",
+		Sort:   "updated_desc",
+		Limit:  pageSize,
+		Offset: 0,
+	}
+	animes, err := app.Store.GetAnimes(getParams)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		log.Println(err)
+		return
+	}
+
+	// Hitung total anime untuk pagination awal
+	countParams := database.GetAnimesParams{Search: ""}
+	totalAnimes, _ := app.Store.CountAnimes(countParams)
+	totalPages := int(math.Ceil(float64(totalAnimes) / float64(pageSize)))
+
+	// Ambil data channel untuk mapping
 	channelsMap, err := app.Store.GetAllChannelsMap()
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		log.Println(err)
 		return
 	}
-	
-	topWeekly, err := app.Store.GetTopWeeklyAnimes()
-    if err != nil {
-        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-        log.Println(err)
-        return
-    }
 
+	// Siapkan semua data untuk di-render oleh server
 	data := map[string]interface{}{
 		"Animes":      animes,
-		"ChannelsMap": channelsMap,
 		"TopWeekly":   topWeekly,
+		"ChannelsMap": channelsMap,
 		"CurrentYear": time.Now().Year(),
-		"Search":      searchQuery,
-		"Sort":        sortOption,
+		"Sort":        "updated_desc",
+		"CurrentPage": 1,
+		"TotalPages":  totalPages,
+		"NextPage":    2,
 	}
 
 	app.render(w, r, "index.page.html", data)
@@ -187,6 +194,14 @@ func newTemplateCache() (map[string]*template.Template, error) {
 	// Fungsi kustom untuk digunakan di dalam template
 	funcMap := template.FuncMap{
 		"split": strings.Split,
+		"json": func(v interface{}) template.JS {
+			b, err := json.Marshal(v)
+			if err != nil {
+				log.Println("Error marshalling to JSON:", err)
+				return template.JS("{}")
+			}
+			return template.JS(b)
+		},
 	}
 
 	pages, err := filepath.Glob("./web/templates/*.page.html")
@@ -213,19 +228,75 @@ func newTemplateCache() (map[string]*template.Template, error) {
 
 // API
 func (app *Application) apiListAnimesHandler(w http.ResponseWriter, r *http.Request) {
+	const pageSize = 24
+
 	query := r.URL.Query()
-	params := database.GetAnimesParams{
-		Search: query.Get("search"),
-		Sort:   query.Get("sort"), // "name_asc", "name_desc", "updated_asc", "updated_desc"
+	searchQuery := query.Get("search")
+	sortOption := query.Get("sort")
+	pageStr := query.Get("page")
+
+	if sortOption == "" {
+		sortOption = "updated_desc"
+	}
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page < 1 {
+		page = 1
 	}
 
-	animes, err := app.Store.GetAnimes(params)
+	// Hitung total hasil untuk pagination
+	countParams := database.GetAnimesParams{Search: searchQuery}
+	totalAnimes, err := app.Store.CountAnimes(countParams)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		log.Printf("API Error: %v", err)
+		log.Println(err)
+		return
+	}
+	totalPages := int(math.Ceil(float64(totalAnimes) / float64(pageSize)))
+
+	// Ambil data anime untuk halaman saat ini
+	offset := (page - 1) * pageSize
+	getParams := database.GetAnimesParams{
+		Search: searchQuery,
+		Sort:   sortOption,
+		Limit:  pageSize,
+		Offset: offset,
+	}
+	animes, err := app.Store.GetAnimes(getParams)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		log.Println(err)
 		return
 	}
 
+	// Siapkan respons JSON yang terstruktur
+	response := struct {
+		Animes     []models.Anime `json:"animes"`
+		Pagination struct {
+			CurrentPage int `json:"currentPage"`
+			TotalPages  int `json:"totalPages"`
+		} `json:"pagination"`
+	}{
+		Animes: animes,
+		Pagination: struct {
+			CurrentPage int `json:"currentPage"`
+			TotalPages  int `json:"totalPages"`
+		}{
+			CurrentPage: page,
+			TotalPages:  totalPages,
+		},
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(animes)
+	json.NewEncoder(w).Encode(response)
+}
+
+func (app *Application) apiChannelsHandler(w http.ResponseWriter, r *http.Request) {
+	channelsMap, err := app.Store.GetAllChannelsMap()
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		log.Println(err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(channelsMap)
 }
