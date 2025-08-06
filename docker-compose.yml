@@ -17,6 +17,18 @@ services:
     # Restart container secara otomatis jika terjadi kegagalan
     restart: unless-stopped
     # Menetapkan network (opsional tapi praktik yang baik)
+    depends_on:
+      - pgbouncer
+    networks:
+      - alyo-net
+  pgbouncer:
+    image: edoburu/pgbouncer:1.17
+    container_name: alyo_pgbouncer
+    # Mount file konfigurasi yang kita buat ke dalam container
+    volumes:
+      - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini
+      - ./pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt
+    restart: unless-stopped
     networks:
       - alyo-net
 

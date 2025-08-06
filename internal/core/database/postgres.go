@@ -178,6 +178,8 @@ func (s *DBStore) GetAnimes(params GetAnimesParams) ([]models.Anime, error) {
 	paginationClause := fmt.Sprintf(" LIMIT %d OFFSET %d", params.Limit, params.Offset)
 
 	finalQuery := baseQuery + whereClause + groupByClause + orderBy + paginationClause
+
+	fmt.Println("Executing query:", finalQuery, "with args:", args)
 	err := s.db.Select(&animes, finalQuery, args...)
 	return animes, err
 }
