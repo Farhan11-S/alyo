@@ -179,7 +179,6 @@ func (s *DBStore) GetAnimes(params GetAnimesParams) ([]models.Anime, error) {
 
 	finalQuery := baseQuery + whereClause + groupByClause + orderBy + paginationClause
 
-	fmt.Println("Executing query:", finalQuery, "with args:", args)
 	err := s.db.Select(&animes, finalQuery, args...)
 	return animes, err
 }
