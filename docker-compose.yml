@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   alyo-app:
     # Membangun image dari Dockerfile di direktori saat ini
@@ -22,7 +20,7 @@ services:
     networks:
       - alyo-net
   pgbouncer:
-    image: edoburu/pgbouncer:1.17
+    image: edoburu/pgbouncer:v1.24.1-p1
     container_name: alyo_pgbouncer
     # Mount file konfigurasi yang kita buat ke dalam container
     volumes:
