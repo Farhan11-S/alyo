@@ -1,9 +1,11 @@
 services:
   alyo-app:
     # Membangun image dari Dockerfile di direktori saat ini
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     # Menamakan container agar mudah diidentifikasi
-    container_name: alyo_app
+    container_name: alyo_api
     # Menggunakan file .env untuk variabel lingkungan
     env_file:
       - .env
@@ -19,6 +21,8 @@ services:
       - pgbouncer
     networks:
       - alyo-net
+    command: sh -c "/app/bin/worker & /app/bin/webapp"
+
   pgbouncer:
     image: edoburu/pgbouncer:v1.24.1-p1
     container_name: alyo_pgbouncer

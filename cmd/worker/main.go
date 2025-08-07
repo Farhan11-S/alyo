@@ -4,8 +4,12 @@ import (
 	"alyo/internal/core/database"
 	"alyo/internal/core/models"
 	"alyo/internal/youtube"
+	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -21,9 +25,9 @@ type AppConfig struct {
 }
 
 var targetChannels = map[string]string{
-	"Muse Asia":      "UCGbshtvS9t-8CW11W7TooQg",
-	"Ani-One Asia":   "UC0wNSTMWIL3qaorLx0jie6A",
 	"Muse Indonesia": "UCxxnxya_32jcKj4yN1_kD7A",
+	"Ani-One Asia":   "UC0wNSTMWIL3qaorLx0jie6A",
+	"Muse Asia":      "UCGbshtvS9t-8CW11W7TooQg",
 }
 
 func main() {
@@ -78,8 +82,22 @@ func (app *AppConfig) runWorker() {
 			log.Printf("ERROR: Could not get profile picture for channel %s: %v", name, err)
 		}
 
+		var localImagePath string
+		if profilePicURL != "" {
+			localImagePath = fmt.Sprintf("/img/channels/%s.jpg", id)
+			fullPath := filepath.Join("web", strings.TrimPrefix(localImagePath, "/"))
+
+			if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+				errDownload := downloadAndSaveImage(profilePicURL, fullPath)
+				if errDownload != nil {
+					log.Printf("ERROR: Could not download image for channel %s: %v", name, errDownload)
+					localImagePath = ""
+				}
+			}
+		}
+
 		channelURL := "https://www.youtube.com/channel/" + id
-		err = app.Store.UpsertChannel(models.Channel{ID: id, Name: name, URL: channelURL, ProfilePictureURL: &profilePicURL})
+		err = app.Store.UpsertChannel(models.Channel{ID: id, Name: name, URL: channelURL, ProfilePictureURL: &localImagePath})
 		if err != nil {
 			log.Printf("ERROR: Could not upsert channel %s: %v", name, err)
 			continue
@@ -100,6 +118,7 @@ func (app *AppConfig) runWorker() {
 			log.Printf("  -> Processing relevant playlist: %s", p.Snippet.Title)
 
 			animeTitle := extractAnimeTitle(p.Snippet.Title)
+			// Perbaikan: Memanggil findOrCreateAnime sebagai method dari app
 			animeID, err := app.findOrCreateAnime(animeTitle, p.Snippet.Description)
 			if err != nil {
 				log.Printf("    ERROR: Could not find or create anime '%s': %v", animeTitle, err)
@@ -171,35 +190,28 @@ func (app *AppConfig) runWorker() {
 
 				currentTotalViews += episodeModel.ViewCount
 
-				// Perbarui waktu episode terbaru
 				if latestEpisodeTime == nil || v.Snippet.PublishedAt.After(*latestEpisodeTime) {
 					latestEpisodeTime = &v.Snippet.PublishedAt
 				}
 
-				// Cari thumbnail dari episode paling awal (dianggap episode 1)
 				if earliestDate == nil || v.Snippet.PublishedAt.Before(*earliestDate) {
 					earliestDate = &v.Snippet.PublishedAt
 					firstEpisodeThumbnailURL = &thumbURL
 				}
 			}
 
-			// Setelah semua episode diproses, perbarui data anime
-			// 1. Dapatkan total view count lama
 			oldTotalViews, err := app.Store.GetAnimeViewData(animeID)
 			if err != nil {
 				log.Printf("    WARN: Could not get old view data for anime ID %d: %v", animeID, err)
 			}
 
-			// 2. Hitung peningkatan mingguan
 			weeklyIncrease := currentTotalViews - oldTotalViews
 
-			// 3. Perbarui data views di tabel animes
 			err = app.Store.UpdateAnimeViewData(animeID, currentTotalViews, weeklyIncrease)
 			if err != nil {
 				log.Printf("    ERROR: Could not update view data for anime ID %d: %v", animeID, err)
 			}
 
-			// Setelah semua episode diproses, perbarui timestamp dan thumbnail anime
 			if latestEpisodeTime != nil {
 				err := app.Store.UpdateAnimeLastUpdated(animeID, *latestEpisodeTime)
 				if err != nil {
@@ -213,11 +225,44 @@ func (app *AppConfig) runWorker() {
 				}
 			}
 
-			time.Sleep(1 * time.Second)
+			time.Sleep(2 * time.Second)
 		}
 	}
 }
 
+func downloadAndSaveImage(url string, filePath string) error {
+	dir := filepath.Dir(filePath)
+	// Buat semua direktori perantara jika belum ada
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("could not create directory %s: %w", dir, err)
+	}
+
+	response, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != 200 {
+		return fmt.Errorf("received non-200 response code: %d", response.StatusCode)
+	}
+
+	file, err := os.Create(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, response.Body)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Successfully downloaded and saved image to %s", filePath)
+	return nil
+}
+
+// Perbaikan: Mengubah findOrCreateAnime menjadi method dari *AppConfig
 func (app *AppConfig) findOrCreateAnime(title, synopsis string) (int, error) {
 	existingAnime, err := app.Store.FindAnimeByTitle(title)
 	if err != nil {
@@ -271,13 +316,11 @@ func extractEpisodeNumber(videoTitle string) *int {
 
 func extractLanguage(title string) string {
 	lowerTitle := strings.ToLower(title)
-	// Kata kunci untuk Bahasa Indonesia
 	indonesianKeywords := []string{"sub indo", "indonesia", "[id]"}
 	for _, keyword := range indonesianKeywords {
 		if strings.Contains(lowerTitle, keyword) {
 			return "id"
 		}
 	}
-	// Default ke Bahasa Inggris
 	return "en"
 }

@@ -76,12 +76,12 @@ func (s *DBStore) FindAnimeByTitle(title string) (*models.Anime, error) {
 // UpsertAnime menyisipkan anime baru atau memperbarui yang sudah ada.
 func (s *DBStore) UpsertAnime(anime models.Anime) (int, error) {
 	var animeID int
-	query := `INSERT INTO animes (title, synopsis, thumbnail_url, release_year) VALUES ($1, $2, $3, $4) ON CONFLICT (title) DO UPDATE SET synopsis = EXCLUDED.synopsis, thumbnail_url = EXCLUDED.thumbnail_url, release_year = EXCLUDED.release_year RETURNING anime_id;`
-	err := s.db.QueryRowx(query, anime.Title, anime.Synopsis, anime.ThumbnailURL, anime.ReleaseYear).Scan(&animeID)
+	query := `INSERT INTO animes (title, synopsis) VALUES ($1, $2) ON CONFLICT (title) DO UPDATE SET synopsis = EXCLUDED.synopsis RETURNING anime_id;`
+	err := s.db.QueryRowx(query, anime.Title, anime.Synopsis).Scan(&animeID)
 	return animeID, err
 }
 
-// UpsertPlaylist menyisipkan playlist baru atau memperbarui yang sudah ada, termasuk bahasa.
+// UpsertPlaylist menyisipkan playlist baru atau memperbarui yang sudah ada.
 func (s *DBStore) UpsertPlaylist(playlist models.Playlist) error {
 	query := `INSERT INTO playlists (playlist_id, channel_id, anime_id, title, description, language) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (playlist_id) DO UPDATE SET channel_id = EXCLUDED.channel_id, anime_id = EXCLUDED.anime_id, title = EXCLUDED.title, description = EXCLUDED.description, language = EXCLUDED.language;`
 	_, err := s.db.Exec(query, playlist.ID, playlist.ChannelID, playlist.AnimeID, playlist.Title, playlist.Description, playlist.Language)
@@ -95,47 +95,25 @@ func (s *DBStore) UpsertEpisode(episode models.Episode) error {
 	return err
 }
 
-func (s *DBStore) GetAllChannelsMap() (map[string]models.Channel, error) {
-	channels := []models.Channel{}
-	query := `SELECT * FROM channels`
-	err := s.db.Select(&channels, query)
-	if err != nil {
-		return nil, err
-	}
-
-	channelMap := make(map[string]models.Channel)
-	for _, ch := range channels {
-		channelMap[ch.ID] = ch
-	}
-	return channelMap, nil
-}
-
+// CountAnimes menghitung total anime yang cocok dengan kriteria pencarian.
 func (s *DBStore) CountAnimes(params GetAnimesParams) (int, error) {
 	var count int
-	// Query ini hanya menghitung, jadi lebih cepat.
-	baseQuery := `
-		SELECT COUNT(DISTINCT a.anime_id)
-		FROM animes a
-		JOIN playlists p ON a.anime_id = p.anime_id
-	`
+	baseQuery := `SELECT COUNT(DISTINCT a.anime_id) FROM animes a JOIN playlists p ON a.anime_id = p.anime_id`
 	conditions := []string{"a.thumbnail_url IS NOT NULL"}
 	var args []interface{}
 	argID := 1
-
 	if params.Search != "" {
 		conditions = append(conditions, fmt.Sprintf("a.title ILIKE $%d", argID))
 		args = append(args, "%"+params.Search+"%")
 		argID++
 	}
-
 	whereClause := " WHERE " + strings.Join(conditions, " AND ")
 	finalQuery := baseQuery + whereClause
-
 	err := s.db.Get(&count, finalQuery, args...)
 	return count, err
 }
 
-// GetAnimes diperbarui untuk memfilter berdasarkan bahasa.
+// GetAnimes dioptimalkan dengan GROUP BY dan kini mendukung pagination.
 func (s *DBStore) GetAnimes(params GetAnimesParams) ([]models.Anime, error) {
 	var animes []models.Anime
 	baseQuery := `
@@ -150,17 +128,14 @@ func (s *DBStore) GetAnimes(params GetAnimesParams) ([]models.Anime, error) {
 	conditions := []string{"a.thumbnail_url IS NOT NULL"}
 	var args []interface{}
 	argID := 1
-
 	if params.Search != "" {
 		conditions = append(conditions, fmt.Sprintf("a.title ILIKE $%d", argID))
 		args = append(args, "%"+params.Search+"%")
 		argID++
 	}
-
 	whereClause := " WHERE " + strings.Join(conditions, " AND ")
 	groupByClause := " GROUP BY a.anime_id"
 	orderBy := " ORDER BY last_updated DESC NULLS LAST"
-
 	switch params.Sort {
 	case "name_asc":
 		orderBy = " ORDER BY title ASC"
@@ -173,36 +148,9 @@ func (s *DBStore) GetAnimes(params GetAnimesParams) ([]models.Anime, error) {
 	case "views_desc":
 		orderBy = " ORDER BY total_view_count DESC NULLS LAST"
 	}
-
-	// Menambahkan LIMIT dan OFFSET untuk pagination
 	paginationClause := fmt.Sprintf(" LIMIT %d OFFSET %d", params.Limit, params.Offset)
-
 	finalQuery := baseQuery + whereClause + groupByClause + orderBy + paginationClause
-
 	err := s.db.Select(&animes, finalQuery, args...)
-	return animes, err
-}
-
-func (s *DBStore) GetAnimeViewData(animeID int) (totalViews int64, err error) {
-	query := `SELECT total_view_count FROM animes WHERE anime_id = $1`
-	err = s.db.Get(&totalViews, query, animeID)
-	// Jika tidak ada baris (anime baru), kembalikan 0 sebagai nilai lama.
-	if err == sql.ErrNoRows {
-		return 0, nil
-	}
-	return
-}
-
-func (s *DBStore) UpdateAnimeViewData(animeID int, newTotalViews int64, weeklyIncrease int64) error {
-	query := `UPDATE animes SET total_view_count = $1, weekly_view_increase = $2 WHERE anime_id = $3`
-	_, err := s.db.Exec(query, newTotalViews, weeklyIncrease, animeID)
-	return err
-}
-
-func (s *DBStore) GetTopWeeklyAnimes() ([]models.Anime, error) {
-	var animes []models.Anime
-	query := `SELECT * FROM animes WHERE thumbnail_url IS NOT NULL AND weekly_view_increase > 0 ORDER BY weekly_view_increase DESC NULLS LAST LIMIT 10`
-	err := s.db.Select(&animes, query)
 	return animes, err
 }
 
@@ -213,24 +161,59 @@ func (s *DBStore) UpdateAnimeLastUpdated(animeID int, timestamp time.Time) error
 	return err
 }
 
-// UpdateAnimeThumbnailURL memperbarui thumbnail anime jika belum ada.
+// UpdateAnimeThumbnailURL memperbarui thumbnail anime jika belum ada dan URL valid.
 func (s *DBStore) UpdateAnimeThumbnailURL(animeID int, newURL string) error {
 	if newURL == "" {
-		return nil // Tidak melakukan apa-apa jika URL kosong.
+		return nil
 	}
-
-	// 2. Cek jika URL yang diberikan adalah URL yang valid.
 	_, err := url.ParseRequestURI(newURL)
 	if err != nil {
-		// URL tidak valid, jadi kita tidak menjalankan query.
-		// Kita bisa mencatat peringatan ini jika perlu.
 		log.Printf("WARN: Invalid URL provided for thumbnail, skipping update: %s", newURL)
 		return nil
 	}
-
 	query := `UPDATE animes SET thumbnail_url = $1 WHERE anime_id = $2 AND thumbnail_url IS NULL`
 	_, err = s.db.Exec(query, newURL, animeID)
 	return err
+}
+
+// GetAnimeViewData mengambil total view count saat ini dari database.
+func (s *DBStore) GetAnimeViewData(animeID int) (totalViews int64, err error) {
+	query := `SELECT total_view_count FROM animes WHERE anime_id = $1`
+	err = s.db.Get(&totalViews, query, animeID)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return
+}
+
+// UpdateAnimeViewData memperbarui total dan peningkatan mingguan.
+func (s *DBStore) UpdateAnimeViewData(animeID int, newTotalViews int64, weeklyIncrease int64) error {
+	query := `UPDATE animes SET total_view_count = $1, weekly_view_increase = $2 WHERE anime_id = $3`
+	_, err := s.db.Exec(query, newTotalViews, weeklyIncrease, animeID)
+	return err
+}
+
+// GetTopWeeklyAnimes mengambil 10 anime teratas berdasarkan peningkatan mingguan.
+func (s *DBStore) GetTopWeeklyAnimes() ([]models.Anime, error) {
+	var animes []models.Anime
+	query := `SELECT * FROM animes WHERE thumbnail_url IS NOT NULL AND weekly_view_increase > 0 ORDER BY weekly_view_increase DESC NULLS LAST LIMIT 10`
+	err := s.db.Select(&animes, query)
+	return animes, err
+}
+
+// GetAllChannelsMap mengambil semua data channel dan mengembalikannya sebagai map.
+func (s *DBStore) GetAllChannelsMap() (map[string]models.Channel, error) {
+	channels := []models.Channel{}
+	query := `SELECT * FROM channels`
+	err := s.db.Select(&channels, query)
+	if err != nil {
+		return nil, err
+	}
+	channelMap := make(map[string]models.Channel)
+	for _, ch := range channels {
+		channelMap[ch.ID] = ch
+	}
+	return channelMap, nil
 }
 
 // GetAllAnimes mengambil semua anime dari database (versi sederhana).
@@ -244,7 +227,7 @@ func (s *DBStore) GetAllAnimes() ([]models.Anime, error) {
 // GetAnimeWithEpisodes mengambil satu anime beserta semua episodenya.
 func (s *DBStore) GetAnimeWithEpisodes(animeID int) (*models.AnimeWithEpisodes, error) {
 	var anime models.Anime
-	queryAnime := `SELECT * FROM animes WHERE anime_id = $1`
+	queryAnime := `SELECT a.*, (array_agg(p.channel_id))[1] as channel_id, string_agg(DISTINCT p.language, ',') as languages FROM animes a JOIN playlists p ON a.anime_id = p.anime_id WHERE a.anime_id = $1 GROUP BY a.anime_id`
 	err := s.db.Get(&anime, queryAnime, animeID)
 	if err != nil {
 		return nil, err
